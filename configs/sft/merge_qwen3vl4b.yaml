@@ -1,0 +1,11 @@
+### model
+model_name_or_path: Qwen/Qwen3-VL-4B-Instruct
+adapter_name_or_path: outputs/sft/qwen3vl4b
+template: qwen3_vl_nothink
+trust_remote_code: true
+
+### export
+export_dir: outputs/merged/qwen3vl4b
+export_size: 5
+export_device: cpu
+export_legacy_format: false

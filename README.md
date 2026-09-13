@@ -1,116 +1,297 @@
-<p  align="center">
-  <img src='logo.png' width='200'>
+# MIC: Explaining Image–Claim Inconsistencies in AI-Generated Multimodal Misinformation
+
+[![License](https://img.shields.io/github/license/UKPLab/arxiv2026-mic)](LICENSE)
+[![Python Versions](https://img.shields.io/badge/Python-3.11-blue.svg?style=flat&logo=python&logoColor=white)](https://www.python.org/)
+
+This repository contains the code for **MIC (Multimodal Inconsistency Checking)** and the **MIC-Bench** construction pipeline associated with *MIC: Explaining Image–Claim Inconsistencies in AI-Generated Multimodal Misinformation*. The paper's arXiv submission is pending.
+
+The original code is released under the **Apache License 2.0**. Bundled frameworks retain their upstream licenses. Images, datasets, and model weights are subject to their respective providers' terms; see [License](#license).
+
+Contact person: [Ruihong Zeng](mailto:zengrh3@gmail.com) (zengrh3@gmail.com).
+
+[UKP Lab](https://www.ukp.tu-darmstadt.de/) | [TU Darmstadt](https://www.tu-darmstadt.de/)
+
+For questions, bug reports, or help reproducing the experiments, please email the contact person or [open an issue](https://github.com/UKPLab/arxiv2026-mic/issues).
+
+<p align="center">
+  <img src="pic/figure.png" alt="MIC" width="600">
 </p>
 
-# arxiv2026_mic
-[![Arxiv](https://img.shields.io/badge/Arxiv-YYMM.NNNNN-red?style=flat-square&logo=arxiv&logoColor=white)](https://put-here-your-paper.com)
-[![License](https://img.shields.io/github/license/UKPLab/arxiv2026-mic)](https://opensource.org/licenses/Apache-2.0)
-[![Python Versions](https://img.shields.io/badge/Python-3.9-blue.svg?style=flat&logo=python&logoColor=white)](https://www.python.org/)
-[![CI](https://github.com/UKPLab/arxiv2026-mic/actions/workflows/main.yml/badge.svg)](https://github.com/UKPLab/arxiv2026-mic/actions/workflows/main.yml)
+## Contents
 
-This is the official template for new Python projects at UKP Lab. It was adapted for the needs of UKP Lab from the excellent [python-project-template](https://github.com/rochacbruno/python-project-template/) by [rochacbruno](https://github.com/rochacbruno).
+- [News](#news)
+- [Abstract](#abstract)
+- [tl;dr](#tldr)
+- [Datasets](#datasets)
+- [Environment](#environment)
+- [Experiments](#experiments)
+- [Repository structure](#repository-structure)
+- [Development](#development)
+- [Citation](#citation)
+- [Acknowledgments](#acknowledgments)
+- [License](#license)
+- [Disclaimer](#disclaimer)
 
-It should help you start your project and give you continuous status updates on the development through [GitHub Actions](https://docs.github.com/en/actions).
+## News
 
-> **Abstract:** The study of natural language processing (NLP) has gained increasing importance in recent years, with applications ranging from machine translation to sentiment analysis. Properly managing Python projects in this domain is of paramount importance to ensure reproducibility and facilitate collaboration. The template provides a structured starting point for projects and offers continuous status updates on development through GitHub Actions. Key features include a basic setup.py file for installation, packaging, and distribution, documentation structure using mkdocs, testing structure using pytest, code linting with pylint, and entry points for executing the program with basic CLI argument parsing. Additionally, the template incorporates continuous integration using GitHub Actions with jobs to check, lint, and test the project, ensuring robustness and reliability throughout the development process.
+The arXiv paper link, exact MIC-Bench download, and trained checkpoint links are pending. This repository documents the construction, training, inference, and evaluation workflows; release announcements will be added here when available.
 
-Contact person: [Federico Tiblias](mailto:federico.tiblias@tu-darmstadt.de) 
+## Abstract
 
-[UKP Lab](https://www.ukp.tu-darmstadt.de/) | [TU Darmstadt](https://www.tu-darmstadt.de/
-)
+> Claims paired with AI-generated images are a growing form of misinformation. MIC checks whether an image is consistent with its accompanying claim, identifies conflicting visual evidence, and explains the contradiction using world knowledge. MIC-Bench contains 8,812 image–claim instances from 4,406 claims, each paired with an authentic image and an AI-generated counterpart with a controlled contextual inconsistency. The benchmark covers nine inconsistency types. MIC combines supervised fine-tuning with Group Relative Policy Optimization using component-level verifiable rewards. This repository provides the benchmark construction pipeline, training configurations, inference code, and evaluation of verdicts, inconsistency types, visual evidence, and explanations.
 
-Don't hesitate to send us an e-mail or report an issue, if something is broken (and it shouldn't be) or if you have further questions.
+## tl;dr
 
+- **Task:** check image–claim consistency and explain contradictions using visual evidence and world knowledge.
+- **Benchmark:** MIC-Bench pairs authentic and edited images while keeping their claims unchanged; see [Datasets](#datasets).
+- **Training:** adapt Qwen3-VL-4B-Instruct through SFT followed by GRPO.
+- **Evaluation:** report verdict, inconsistency type, visual evidence, and explanation metrics on ID and OOD splits.
+- **Workflow:** construct image–claim pairs, prepare training data, train MIC, and run inference and scoring; see [Experiments](#experiments).
 
-## Getting Started
+## Datasets
 
-> **DO NOT CLONE OR FORK**
+### MIC-Bench
 
-If you want to set up this template:
+MIC-Bench comprises **8,812 image–claim instances from 4,406 claims**. Each claim is paired with an authentic image and an AI-generated counterpart containing a controlled contextual inconsistency. The claim is retained during image editing.
 
-1. Request a repository on UKP Lab's GitHub by following the standard procedure on the wiki. It will install the template directly. Alternatively, set it up in your personal GitHub account by clicking **[Use this template](https://github.com/rochacbruno/python-project-template/generate)**.
-2. Wait until the first run of CI finishes. Github Actions will commit to your new repo with a "✅ Ready to clone and code" message.
-3. Delete optional files: 
-    - If you don't need automatic documentation generation, you can delete folder `docs`, file `.github\workflows\docs.yml` and `mkdocs.yml`
-    - If you don't want automatic testing, you can delete folder `tests` and file `.github\workflows\tests.yml`
-    - If you do not wish to have a project page, delete folder `static` and files `.nojekyll`, `index.html`
-4. Prepare a virtual environment:
+The benchmark covers nine inconsistency types: `clothing`, `flag`, `gesture`, `signage`, `architecture`, `infrastructure`, `technology`, `branding`, and `environment`.
+
+The construction pipeline starts from **TARA**, screens visible contextual cues, proposes an edit, and generates a counterpart using `gpt-image-1.5`. Generated pairs are reviewed before annotations and claim-level train, validation, in-distribution (ID), and out-of-distribution (OOD) splits are assembled.
+
+### Data preparation
+
+#### Prepare benchmark files
+
+Training and evaluation expect split manifests and their referenced images under `data/`:
+
+```text
+data/
+├── TARA/
+│   ├── images/                 # Authentic images
+│   └── edited_images/         # AI-generated counterparts
+└── splits/
+    ├── train.json
+    ├── val.json
+    ├── test_id_edit.json
+    └── test_ood_edit.json
+```
+
+Each manifest is a JSON array containing paired original and edited records. Image paths are relative to the data root, and both instances of a claim stay in the same split. The split builder rejects source image paths shared across splits, and training preparation checks the same condition between training and validation. See [data/README.md](data/README.md) for the record schema, annotation requirements, and legacy label mappings.
+
+The training and evaluation examples require reviewed split manifests and their images. See the construction workflow below, or use the exact MIC-Bench release once its download is available. For files stored elsewhere, pass `--data-root` and `--split-root` to the preparation, inference, and scoring commands.
+
+#### Construct image–claim pairs
+
+See the [dataset construction overview](data_construction/README.md) for the workflow from TARA images through generation and human review to dataset splits and training rationales. Re-running generation produces new images and does not guarantee the exact manuscript benchmark.
+
+## Environment
+
+Use **Python 3.11** and run the commands below from the repository root.
+
 ```bash
-python -m venv .venv
+git clone https://github.com/UKPLab/arxiv2026-mic.git
+cd arxiv2026-mic
+python3.11 -m venv .venv
 source .venv/bin/activate
-pip install .
-pip install -r requirements-dev.txt # Only needed for development
-```
-5. Adapt anything else (for example this file) to your project. 
-
-6. Read the file [ABOUT_THIS_TEMPLATE.md](ABOUT_THIS_TEMPLATE.md)  for more information about development.
-
-## Usage
-
-### Using the classes
-
-To import classes/methods of `arxiv2026_mic` from inside the package itself you can use relative imports: 
-
-```py
-from .base import BaseClass # Notice how I omit the package name
-
-BaseClass().something()
+pip install -r requirements.txt
 ```
 
-To import classes/methods from outside the package (e.g. when you want to use the package in some other project) you can instead refer to the package name:
+Dependencies for data construction, inference, evaluation, and offline tests are listed together in [requirements.txt](requirements.txt). The vLLM dependency is installed on Linux; hosted inference and data utilities can also be used on other platforms.
 
-```py
-from arxiv2026_mic import BaseClass # Notice how I omit the file name
-from arxiv2026_mic.subpackage import SubPackageClass # Here it's necessary because it's a subpackage
+For hosted model calls, set `OPENAI_API_KEY` in your shell or copy [.env.example](.env.example) to `.env` and fill in the key. Choose PyTorch and vLLM builds compatible with your accelerator environment.
 
-BaseClass().something()
-SubPackageClass().something()
-```
-
-### Using scripts
-
-This is how you can use `arxiv2026_mic` from command line:
+Use separate environments for SFT and GRPO. From the repository root, install the bundled frameworks and the dependencies used by the MIC configurations:
 
 ```bash
-$ python -m arxiv2026_mic
+# In a separate SFT environment:
+pip install -r requirements.txt -e ./LlamaFactory
+
+# In a separate GRPO environment:
+pip install -r requirements.txt -e "./training/verl[vllm,geo]"
 ```
 
-### Expected results
+The GRPO configuration also uses FlashAttention 2; install a build compatible with your PyTorch, CUDA, and GPU environment. See the bundled [LlamaFactory installation instructions](LlamaFactory/README.md#installation) and [verl setup instructions](training/verl/README.md#getting-started) for accelerator setup. These installation ranges follow the bundled package declarations.
 
-After running the experiments, you should expect the following results:
+## Experiments
 
-(Feel free to describe your expected results here...)
+Run commands from the repository root after completing [Environment](#environment) setup and [Data preparation](#data-preparation).
 
-### Parameter description
+### Training
 
-* `x, --xxxx`: This parameter does something nice
+Training uses **Qwen3-VL-4B-Instruct**. Its SFT and adapter-merge configurations are in [configs/sft/](configs/sft/).
 
-* ...
+#### 1. Supervised fine-tuning
 
-* `z, --zzzz`: This parameter does something even nicer
+With the images and `train.json` / `val.json` manifests in place, prepare the ShareGPT data and LlamaFactory dataset registry:
+
+```bash
+python -m src.training.prepare --format sft
+```
+
+In your SFT environment, train the LoRA adapter and merge it into the base model:
+
+```bash
+llamafactory-cli train configs/sft/qwen3vl4b.yaml
+llamafactory-cli export configs/sft/merge_qwen3vl4b.yaml
+```
+
+The default merged checkpoint is written to `outputs/merged/qwen3vl4b`.
+
+#### 2. GRPO
+
+Prepare the training and validation Parquet files:
+
+```bash
+python -m src.training.prepare --format grpo
+```
+
+In your GRPO environment, launch training from the merged SFT checkpoint:
+
+```bash
+bash scripts/train_grpo.sh
+```
+
+The launcher defaults to **8 GPUs on one node**. Set `N_GPUS_PER_NODE`, `MODEL_PATH`, `GRPO_DATA_DIR`, or `RUN_DIR` to override the GPU count and paths. Training settings are in [configs/grpo/mic.yaml](configs/grpo/mic.yaml), and component rewards are implemented in [src/training/reward.py](src/training/reward.py).
+
+Export a selected GRPO actor checkpoint to Hugging Face format. Replace `STEP` with the saved training step and choose a new output directory:
+
+```bash
+bash scripts/export_grpo.sh \
+  outputs/grpo/qwen3vl4b/global_step_STEP/actor \
+  outputs/exported/mic
+```
+
+### Inference and evaluation
+
+#### Run inference
+
+After installing the local inference dependencies, evaluate the exported MIC checkpoint on the ID split:
+
+```bash
+python -m src.run_infer \
+  --model outputs/exported/mic \
+  --backend vllm \
+  --split test_id_edit \
+  --prompt canonical \
+  --run-name mic_id
+```
+
+For the SFT-only model, use `--model outputs/merged/qwen3vl4b`. For OOD evaluation, use `--split test_ood_edit` and a separate run name such as `mic_ood`. Hosted inference uses `--backend api --provider openai` with an API model name.
+
+Inference resumes existing results by default and checks run, model, prompt, and inference settings before appending. Use a new `--run-name` when changing those settings. `--no-skip-existing` starts a fresh prediction file for the selected run. Malformed or mixed prediction files are rejected before scoring.
+
+#### Score predictions
+
+```bash
+python -m src.run_score \
+  --predictions results/predictions/mic_id.jsonl \
+  --split test_id_edit
+```
+
+Scoring reports verdict metrics, inconsistency type accuracy, visual evidence similarity, and explanation similarity. Similarity scoring uses **Qwen3-Embedding-0.6B** by default. Use `--skip-embed` to compute only verdict and type metrics. For deliberately partial runs, pass `--allow-partial` to include coverage in the report.
+
+Predictions are saved to `results/predictions/`. Per-instance scores and aggregate `.summary.json` files are saved to `results/scored/`.
+
+#### Expected results
+
+A completed inference run produces one structured prediction per selected instance. Evaluation produces per-instance scores and an aggregate report for verdict, inconsistency type, visual evidence, and explanation. Numeric reproduction results require the released checkpoint and exact reviewed MIC-Bench splits; those release links are pending.
+
+#### Parameter description
+
+| Parameter | Purpose |
+| --- | --- |
+| `--model` | Local checkpoint path or hosted model identifier for inference |
+| `--backend` | Inference runtime: `vllm` or `api` |
+| `--split` | Benchmark split to infer or score |
+| `--data-root`, `--split-root` | Override image and manifest directories |
+| `--run-name` | Name of the prediction run |
+| `--predictions` | Prediction JSONL file to score |
+| `--skip-embed` | Score verdict and type without embedding models |
+| `--format` | Training preparation output: `sft` or `grpo` |
+
+Run the corresponding command with `--help` for all available options and defaults.
+
+#### Output format
+
+The canonical response uses the following tags; the text below illustrates the format:
+
+```xml
+<think>Reasoning grounded in visible evidence.</think>
+<verdict>INCONSISTENT</verdict>
+<type>flag</type>
+<visual>Description of the conflicting flag visible in the image.</visual>
+<explanation>World knowledge explaining why this flag contradicts the claim.</explanation>
+```
+
+For `CONSISTENT` predictions, `type`, `visual`, and `explanation` must each be `None`. See the [canonical prompt](src/prompts.py) and [response parser](src/parsers/cot_tagged.py) for the full contract.
+
+## Repository structure
+
+```text
+arxiv2026-mic/
+├── src/                # MIC inference, evaluation, and shared utilities
+│   ├── backends/       # vLLM and hosted inference
+│   ├── parsers/        # Structured response parsing
+│   ├── metrics/        # Evaluation metrics
+│   ├── training/       # Training data conversion and component rewards
+│   ├── run_infer.py    # Inference entry point
+│   ├── run_score.py    # Evaluation entry point
+│   └── ...             # Data loading, prompts, schema, and shared helpers
+├── data_construction/  # Source preparation, editing, review, splits, and README
+├── configs/
+│   ├── sft/            # SFT and adapter-merge configurations
+│   └── grpo/           # GRPO configuration
+├── data/               # Data schema and local benchmark files
+├── LlamaFactory/       # Bundled SFT framework
+├── training/
+│   └── verl/           # Bundled GRPO framework
+├── pic/                # README figures
+├── scripts/            # GRPO launch, checkpoint export, and release checks
+├── tests/              # Offline pipeline and regression tests
+├── .github/            # CI, issue templates, and pull request template
+└── requirements.txt    # Project dependencies, including offline tests
+```
 
 ## Development
 
-Read the FAQs in [ABOUT_THIS_TEMPLATE.md](ABOUT_THIS_TEMPLATE.md) to learn more about how this template works and where you should put your classes & methods. Make sure you've correctly installed `requirements-dev.txt` dependencies
+The directory layout and module commands follow the original MIC repository. The publication fields follow the [Misviz README](https://github.com/UKPLab/acl2026-misviz#readme).
 
-## Cite
+Run commands from the repository root after installing [requirements.txt](requirements.txt):
 
-Please use the following citation:
-
+```bash
+python -m src.run_infer --help
+python -m src.run_score --help
+python -m src.training.prepare --help
+python -m data_construction --help
+python -m pytest
+python scripts/check_release.py --history
 ```
-@InProceedings{smith:20xx:CONFERENCE_TITLE,
-  author    = {Smith, John},
-  title     = {My Paper Title},
-  booktitle = {Proceedings of the 20XX Conference on XXXX},
-  month     = mmm,
-  year      = {20xx},
-  address   = {Gotham City, USA},
-  publisher = {Association for XXX},
-  pages     = {XXXX--XXXX},
-  url       = {http://xxxx.xxx}
+
+The offline tests use temporary fixtures and mock model runtimes. The [CI workflow](.github/workflows/release-checks.yml) installs the non-model dependencies from the same requirements file, then runs the tests and release checks. These checks also verify the required publication sections, UKP notices, and local documentation links.
+
+## Citation
+
+If you use MIC in your research, please cite our paper. The arXiv submission is pending; the year, arXiv identifier, and URL are left blank until publication.
+
+```bibtex
+@misc{zeng-etal-mic,
+  title = {{MIC}: Explaining Image--Claim Inconsistencies in {AI}-Generated Multimodal Misinformation},
+  author = {Zeng, Ruihong and Tonglet, Jonathan and Nakov, Preslav and Gurevych, Iryna},
+  year = {},
+  eprint = {},
+  archivePrefix = {arXiv},
+  url = {}
 }
 ```
 
+## Acknowledgments
+
+MIC builds on [TARA](https://github.com/zeyofu/TARA) for source image–claim data, [LlamaFactory](LlamaFactory/) for supervised fine-tuning, and [verl](training/verl/) for reinforcement learning. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for component attribution and licenses.
+
+## License
+
+MIC's original code is released under the **Apache License 2.0**; see [LICENSE](LICENSE). Bundled third-party code retains its upstream licenses and notices. Images, datasets, and model weights are subject to their respective providers' terms.
+
 ## Disclaimer
 
-> This repository contains experimental software and is published for the sole purpose of giving additional background details on the respective publication. 
+> This repository contains experimental software and is published for the sole purpose of giving additional background details on the respective publication.

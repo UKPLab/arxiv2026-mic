@@ -1,0 +1,76 @@
+# MIC GRPO training defaults for Qwen3-VL-4B.
+defaults:
+  - ppo_trainer
+  - _self_
+
+hydra:
+  searchpath:
+    - pkg://verl.trainer.config
+
+algorithm:
+  adv_estimator: grpo
+  use_kl_in_reward: false
+data:
+  train_batch_size: 8
+  max_prompt_length: 4096
+  max_response_length: 1536
+  filter_overlong_prompts: true
+  filter_overlong_prompts_workers: 8
+  truncation: error
+  image_key: images
+  image_patch_size: 16
+  trust_remote_code: true
+actor_rollout_ref:
+  model:
+    trust_remote_code: true
+    use_remove_padding: true
+    enable_gradient_checkpointing: true
+  actor:
+    optim:
+      lr: 1.0e-5
+    ppo_mini_batch_size: 8
+    ppo_micro_batch_size_per_gpu: 1
+    use_kl_loss: true
+    kl_loss_coef: 0.01
+    kl_loss_type: low_var_kl
+    entropy_coeff: 0
+    freeze_vision_tower: true
+    fsdp_config:
+      model_dtype: bfloat16
+      param_offload: true
+      optimizer_offload: true
+      use_torch_compile: false
+  rollout:
+    name: vllm
+    n: 8
+    log_prob_micro_batch_size_per_gpu: 2
+    tensor_model_parallel_size: 1
+    gpu_memory_utilization: 0.5
+    max_model_len: 5632
+    enable_chunked_prefill: false
+    free_cache_engine: true
+    agent:
+      num_workers: 8
+  ref:
+    log_prob_micro_batch_size_per_gpu: 2
+    fsdp_config:
+      model_dtype: bfloat16
+      param_offload: true
+      use_torch_compile: false
+reward:
+  custom_reward_function:
+    name: compute_score
+  num_workers: 1
+trainer:
+  logger: [console, tensorboard]
+  project_name: mic
+  experiment_name: qwen3vl4b_sft_grpo
+  resume_mode: auto
+  n_gpus_per_node: 8
+  nnodes: 1
+  save_freq: 650
+  max_actor_ckpt_to_keep: 4
+  max_critic_ckpt_to_keep: 4
+  test_freq: -1
+  val_before_train: false
+  total_epochs: 3
