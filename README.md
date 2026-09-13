@@ -26,7 +26,6 @@ For questions, bug reports, or help reproducing the experiments, please email th
 - [Environment](#environment)
 - [Experiments](#experiments)
 - [Repository structure](#repository-structure)
-- [Development](#development)
 - [Citation](#citation)
 - [Acknowledgments](#acknowledgments)
 - [License](#license)
@@ -252,26 +251,8 @@ arxiv2026-mic/
 └── requirements.txt    # Project dependencies, including offline tests
 ```
 
-## Development
-
-The directory layout and module commands follow the original MIC repository. The publication fields follow the [Misviz README](https://github.com/UKPLab/acl2026-misviz#readme).
-
-Run commands from the repository root after installing [requirements.txt](requirements.txt):
-
-```bash
-python -m src.run_infer --help
-python -m src.run_score --help
-python -m src.training.prepare --help
-python -m data_construction --help
-python -m pytest
-python scripts/check_release.py --history
-```
-
-The offline tests use temporary fixtures and mock model runtimes. The [CI workflow](.github/workflows/release-checks.yml) installs the non-model dependencies from the same requirements file, then runs the tests and release checks. These checks also verify the required publication sections, UKP notices, and local documentation links.
-
 ## Citation
 
-If you use MIC in your research, please cite our paper. The arXiv submission is pending; the year, arXiv identifier, and URL are left blank until publication.
 
 ```bibtex
 @misc{zeng-etal-mic,
