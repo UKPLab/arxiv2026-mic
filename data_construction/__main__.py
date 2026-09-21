@@ -5,6 +5,7 @@ import importlib
 import sys
 
 STAGES = {
+    "reproduce": ("reproduce", "Recreate images from the released prompts and source URLs"),
     "prepare": ("images", "Normalize downloaded TARA metadata"),
     "download": ("images", "Download source images"),
     "filter": ("images", "Screen feasible contextual edits"),

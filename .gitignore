@@ -16,6 +16,13 @@ wandb/
 *.log
 /data/*
 !/data/README.md
+!/data/editing_prompts.json
+!/data/splits/
+/data/splits/*
+!/data/splits/train.json
+!/data/splits/val.json
+!/data/splits/test_id.json
+!/data/splits/test_ood.json
 /training/data/
 /LlamaFactory/data/mic*/
 /LlamaFactory/saves/

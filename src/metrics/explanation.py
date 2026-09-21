@@ -7,7 +7,7 @@ per-sample values in one pass over all samples that need similarity.
 """
 
 
-from ..cases import classify as classify_case
+from . import classify as classify_case
 
 
 def score_trivial(case: str) -> dict | None:

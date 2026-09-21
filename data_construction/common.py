@@ -9,10 +9,12 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from src.data_loader import DATA_ROOT
+from src.data import DATA_ROOT
 
-TARA_DIR = DATA_ROOT / "TARA"
-IMAGE_DIR = TARA_DIR / "images"
+CONSTRUCTION_DIR = DATA_ROOT / "construction"
+EDITING_PROMPTS_PATH = DATA_ROOT / "editing_prompts.json"
+IMAGE_DIR = DATA_ROOT / "images" / "source"
+EDITED_IMAGE_DIR = DATA_ROOT / "images" / "edited" / "gpt_image"
 
 
 def read_json(path):
@@ -63,7 +65,7 @@ def add_batch_arguments(parser, workers):
 
 def create_client():
     from openai import OpenAI
-    from src.environment import load_environment
+    from src import load_environment
 
     load_environment()
     return OpenAI()

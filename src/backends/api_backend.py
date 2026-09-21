@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 
-from src.environment import load_environment
+from src import load_environment
 
 load_environment()
 

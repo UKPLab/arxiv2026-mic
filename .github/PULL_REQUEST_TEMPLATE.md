@@ -1,15 +1,11 @@
-### Summary :memo:
-_Write an overview about it._
+## Summary
 
-### Details
-_Describe more what you did on changes._
-1. (...)
-2. (...)
+Describe the problem and the resulting behavior.
 
-### Bugfixes :bug: (delete if dind't have any)
--
+## Validation
 
-### Checks
-- [ ] Closed #798
-- [ ] Tested Changes
-- [ ] Stakeholder Approval
+List the commands or checks used to verify this change, including any limitations.
+
+## Related issue
+
+Link a related issue if applicable.

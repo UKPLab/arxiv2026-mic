@@ -9,7 +9,7 @@ The root Apache-2.0 license covers MIC's original code. It does not replace upst
 
 These are bundled research snapshots: LlamaFactory `0.9.5.dev0` and verl `0.8.0.dev0`. Existing per-file copyright headers remain in place. MIC-specific changes include dataset/reward integration, multimodal prompt processing, and portable release entry points.
 
-The construction and preparation utilities were adapted from the companion `ai_image_inconsistency` research project. The paper's historical labels are mapped to the MIC release schema in `src/records.py`.
+The construction and preparation utilities were adapted from the companion `ai_image_inconsistency` research project. The paper's historical labels are mapped to the MIC release schema in `src/data.py`.
 
 TARA data and source images are downloaded separately from the [authors' release](https://github.com/zeyofu/TARA). Qwen model weights, embedding weights, and hosted image services are separate resources with their own terms. No image or model license is implied by the MIC code license.
 

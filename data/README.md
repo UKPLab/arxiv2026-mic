@@ -1,69 +1,79 @@
-# Data
+# MIC-Bench data
 
-See the [construction overview](../data_construction/README.md) for the dataset workflow. This page describes the resulting files and labels.
+This directory contains the editing instructions and fixed dataset annotations. Use the supplied prompts to recreate the images.
 
-## Source download
-
-TARA (ACL 2022) is available from its [official repository](https://github.com/zeyofu/TARA) and the authors' [Google Drive folder](https://drive.google.com/drive/folders/1KNcEN3yvhki4XNIfg-t5mXlQZvS1h1XA?usp=sharing). Download the JSONL metadata under `input/`. The upstream code refers to `train.jsonl`, `gold_dev.jsonl`, and `gold_test.jsonl`. Use the actual files in your download; the repository does not redistribute the news images.
-
-TARA is the starting corpus, not the finished MIC-Bench release. The manuscript describes 4,406 selected claims and 8,812 image–claim instances. No public MIC-Bench archive or checkpoint URL has been configured in this checkout. Re-running a hosted image generator does not guarantee the exact images or final counts used in the manuscript.
-
-## Local layout
+## Included files
 
 ```text
 data/
-├── TARA/
-│   ├── input/                 # Downloaded source metadata
-│   ├── images/                # Authentic images
-│   ├── edited_images/         # Generated counterparts
-│   ├── edit_prompts.json
-│   ├── edit_results.json
-│   └── reviews.json
-├── annotations.json          # Reviewed original/edited records
+├── editing_prompts.json         # Source URLs, editing prompts, types, and image paths
 └── splits/
     ├── train.json
     ├── val.json
-    ├── test_id_edit.json
-    └── test_ood_edit.json
+    ├── test_id.json
+    └── test_ood.json
 ```
 
-Teacher rationales can be stored in separate training and validation manifests before SFT conversion.
+`editing_prompts.json` contains one record per claim. GPT Image instructions are in `edit_result.editing_prompt`; test records also include `flux2_editing_prompt`. The split files contain the paired original/edited records and their annotations.
 
-Each split is a JSON array. An edited record has the following structure (illustrative schema, not a benchmark instance):
+## Dataset size
 
-```json
-{
-  "_id": "example-claim-id",
-  "claim": "The accompanying factual claim.",
-  "image_type": "edited",
-  "local_image": "TARA/edited_images/example_edited.png",
-  "generator": "gpt-image-1.5",
-  "year": 2019,
-  "edit_type": "flag",
-  "gt_entity_fine": "The specific flag visible after editing.",
-  "gt_entity_canonical": "A normalized entity identifier shared across equivalent flags.",
-  "gt_why_contradicts": "The factual reason this flag contradicts the claim."
-}
+| Main split | Claims / image pairs | Image–claim records |
+| --- | ---: | ---: |
+| Train | 2,561 | 5,122 |
+| Validation | 444 | 888 |
+| Test ID | 703 | 1,406 |
+| Test OOD | 698 | 1,396 |
+| **Total** | **4,406** | **8,812** |
+
+## Recreate the images
+
+After completing the [dependency and API setup](../data_construction/README.md), run from the repository root:
+
+```bash
+# Recreate all four splits with GPT Image (uses paid API calls).
+python -m data_construction reproduce --backend gpt-image
+
+# Alternative: recreate the test sets with FLUX.2.
+python -m data_construction reproduce --backend flux2
 ```
 
-The paired original uses the same `_id` and claim, `image_type: "original"`, its authentic image path, and `generator: "none"`. Its inconsistency-specific reference texts are null. A pair moves together across splits. `local_image` is relative to the data root. Distinct claims sharing a source image path must stay in the same split; construction and training preparation reject cross-split path overlap. Copies of an image under different paths still require a separate duplicate-image audit of the benchmark. `cot_response` and `teacher_model` are optional training annotations; when no teacher trace exists, the SFT converter uses a short target derived from the reviewed labels.
+Add `--dry-run` to inspect the workload without downloading images, loading models, or making API calls. GPT Image covers all 4,406 pairs; FLUX.2 covers the 1,401 test pairs. Outputs are saved under `data/reproduced/gpt-image/` or `data/reproduced/flux2/`.
 
-`gt_entity_fine` describes the **actual visible replacement**. It must not contain only the intended edit instruction or a before/after pair. `gt_why_contradicts` describes the world-knowledge contradiction. `gt_entity_canonical` and integer `year` are additionally required when constructing entity/temporal splits.
+**Regenerated images may differ from the paper's images. Check them against the supplied annotations before training or evaluation.** See the [recreation guide](../data_construction/README.md) for image reuse, resuming, and output details.
+
+## Annotation schema
+
+Each split is a JSON array. An original and its edited counterpart share the same `_id` and claim. Image paths are relative to the data root.
+
+| JSON field | Meaning |
+| --- | --- |
+| `_id`, `claim` | Claim identifier and text |
+| `image_type` | `original` or `edited`; determines the reference verdict |
+| `local_image` | Image path relative to the data root |
+| `generator` | Image generation model, or `none` for originals |
+| `edit_type` | Edit category; maps to `<type>` for edited images |
+| `gt_entity_fine` | Description of the actual visible replacement; supplies `<visual>` |
+| `gt_why_contradicts` | Reference explanation of the contradiction; supplies the training target's `<explanation>` |
+| `gt_entity_canonical`, `year` | Entity identifier and year used for entity/temporal splitting |
+| `cot_response` | Tagged reasoning and answer text |
+
+For originals, the visual and explanation references and `gt_entity_canonical` are null. Their `edit_type` retains the paired edit's category, while the output uses `CONSISTENT` and `None` for `<type>`, `<visual>`, and `<explanation>`.
+
+Every released `cot_response` contains these five tags (illustrative example):
+
+```xml
+<think>The visible flag does not match the flag identified in the claim.</think>
+<verdict>INCONSISTENT</verdict>
+<type>flag</type>
+<visual>A red flag with five yellow stars.</visual>
+<explanation>The claim identifies the flag as Japanese, but the visible design is the Chinese national flag.</explanation>
+```
+
+The `<visual>` text is filled from `gt_entity_fine` (`None` for originals). The explanation in `cot_response` can differ from `gt_why_contradicts`; training conversion uses the structured reference fields for the final answer.
 
 ## Type labels
 
-| Release label | Legacy construction label |
-| --- | --- |
-| clothing | clothing |
-| flag | flag |
-| gesture | social_behavior |
-| signage | text_language |
-| architecture | architecture |
-| infrastructure | infrastructure |
-| technology | technology |
-| branding | ads_anachronism |
-| environment | environmental |
-
-Legacy names are accepted for source records and normalized by `src/records.py`. Model outputs must use the release labels. The legacy `<grounding>` and `<knowledge>` fields correspond to release `<visual>` and `<explanation>` fields; new training targets are rebuilt from the reviewed reference fields.
+`clothing`, `flag`, `gesture`, `signage`, `architecture`, `infrastructure`, `technology`, `branding`, `environment`.
 
 See the main README for [training](../README.md#training) and [evaluation](../README.md#inference-and-evaluation).

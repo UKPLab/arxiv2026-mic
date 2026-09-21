@@ -12,11 +12,12 @@ from collections import Counter, defaultdict
 from os.path import normpath
 from pathlib import Path
 
-from data_construction.common import TARA_DIR, nonnegative_int, read_json, write_json
-from src.data_loader import DATA_ROOT
+from data_construction.common import CONSTRUCTION_DIR, nonnegative_int, read_json, write_json
+from src.data import (
+    DATA_ROOT, image_path, normalize_record, normalize_type, read_records, validate_pairs,
+)
 from src.parsers.cot_tagged import parse
 from src.prompts import build_prompt
-from src.records import image_path, normalize_record, normalize_type, read_records, validate_pairs
 
 YEAR_CUT = 2018
 OOD_TARGET_PER_TYPE = 80
@@ -42,7 +43,7 @@ def review_template(results):
         and not row["edit_status"].get("error")]
 
 
-def assemble(results, reviews, data_root, original_dir="TARA/images", edited_dir="TARA/edited_images"):
+def assemble(results, reviews, data_root, original_dir="images/source", edited_dir="images/edited/gpt_image"):
     edits = {}
     for row in results:
         if row["_id"] in edits:
@@ -90,12 +91,12 @@ def assemble(results, reviews, data_root, original_dir="TARA/images", edited_dir
 
 def review_main(argv=None):
     p = argparse.ArgumentParser(description='Create review templates or assemble approved original/edited image pairs.')
-    p.add_argument("--edit-results", type=Path, default=TARA_DIR / "edit_results.json")
+    p.add_argument("--edit-results", type=Path, default=CONSTRUCTION_DIR / "generation_metadata.json")
     p.add_argument("--reviews", type=Path)
     p.add_argument("--export-review", type=Path, help="Write a template for human review and exit")
     p.add_argument("--data-root", type=Path, default=DATA_ROOT)
-    p.add_argument("--original-dir", default="TARA/images")
-    p.add_argument("--edited-dir", default="TARA/edited_images")
+    p.add_argument("--original-dir", default="images/source")
+    p.add_argument("--edited-dir", default="images/edited/gpt_image")
     p.add_argument("--output", type=Path, default=DATA_ROOT / "annotations.json")
     args = p.parse_args(argv)
     results = read_json(args.edit_results)
@@ -221,7 +222,7 @@ def build_splits(records, *, year_cut=YEAR_CUT, ood_target=OOD_TARGET_PER_TYPE,
             return "all_recent_no_train_anchor"
         return "id_recent_surplus"
 
-    split_items = {"train": train, "val": val, "test_id_edit": test_id, "test_ood_edit": test_ood}
+    split_items = {"train": train, "val": val, "test_id": test_id, "test_ood": test_ood}
     image_owners = {}
     for name, items in split_items.items():
         for article_id, _, original in items:
@@ -283,13 +284,13 @@ def _build_report(split_items, ood_picks, *, source_name, year_cut, ood_target, 
 
     entities = {name: {edited["gt_entity_canonical"] for _, edited, _ in items}
                 for name, items in split_items.items()}
-    orphan_entities = entities["test_id_edit"] - entities["train"]
-    leak_entities = entities["test_ood_edit"] & entities["train"]
+    orphan_entities = entities["test_id"] - entities["train"]
+    leak_entities = entities["test_ood"] & entities["train"]
     train_years = [edited["year"] for _, edited, _ in split_items["train"]]
-    test_years = [edited["year"] for name in ("test_id_edit", "test_ood_edit")
+    test_years = [edited["year"] for name in ("test_id", "test_ood")
                   for _, edited, _ in split_items[name]]
     lines += ["", "## Split validation",
-              f"- unique entities: train={len(entities['train'])}, test_id={len(entities['test_id_edit'])}, test_ood={len(entities['test_ood_edit'])}",
+              f"- unique entities: train={len(entities['train'])}, test_id={len(entities['test_id'])}, test_ood={len(entities['test_ood'])}",
               f"- ID test entities absent from training: {len(orphan_entities)} (expected: 0)",
               f"- OOD test entities present in training: {len(leak_entities)} (expected: 0)",
               f"- train year range: {min(train_years)}-{max(train_years)}; min test year: {min(test_years, default=None)}", ""]
@@ -319,16 +320,16 @@ def split_main(argv=None):
         content = value if name == "report" else json.dumps(value, ensure_ascii=False, indent=2)
         (args.output_dir / filename).write_text(content, encoding="utf-8")
 
-    counts = {name: len(result[name]) // 2 for name in ("train", "val", "test_id_edit", "test_ood_edit")}
+    counts = {name: len(result[name]) // 2 for name in ("train", "val", "test_id", "test_ood")}
     entities = {name: {row["gt_entity_canonical"] for row in result[name][1::2]} for name in counts}
     print(f"wrote splits to {args.output_dir}")
     print(f"  train       : {counts['train']} pairs ({2 * counts['train']} samples)")
     print(f"  val         : {counts['val']} pairs")
-    print(f"  test_id_edit: {counts['test_id_edit']} pairs")
-    print(f"  test_ood_edit:{counts['test_ood_edit']} pairs")
+    print(f"  test_id     : {counts['test_id']} pairs")
+    print(f"  test_ood    : {counts['test_ood']} pairs")
     print(f"  discarded   : {len(result['discarded'])} pairs")
-    print(f"  OOD test entities present in training: {len(entities['test_ood_edit'] & entities['train'])}")
-    print(f"  ID test entities absent from training: {len(entities['test_id_edit'] - entities['train'])}")
+    print(f"  OOD test entities present in training: {len(entities['test_ood'] & entities['train'])}")
+    print(f"  ID test entities absent from training: {len(entities['test_id'] - entities['train'])}")
 
 
 # Annotate

@@ -19,7 +19,6 @@ For questions, bug reports, or help reproducing the experiments, please email th
 
 ## Contents
 
-- [News](#news)
 - [Abstract](#abstract)
 - [tl;dr](#tldr)
 - [Datasets](#datasets)
@@ -31,10 +30,6 @@ For questions, bug reports, or help reproducing the experiments, please email th
 - [License](#license)
 - [Disclaimer](#disclaimer)
 
-## News
-
-The arXiv paper link, exact MIC-Bench download, and trained checkpoint links are pending. This repository documents the construction, training, inference, and evaluation workflows; release announcements will be added here when available.
-
 ## Abstract
 
 > Claims paired with AI-generated images are a growing form of misinformation. MIC checks whether an image is consistent with its accompanying claim, identifies conflicting visual evidence, and explains the contradiction using world knowledge. MIC-Bench contains 8,812 image–claim instances from 4,406 claims, each paired with an authentic image and an AI-generated counterpart with a controlled contextual inconsistency. The benchmark covers nine inconsistency types. MIC combines supervised fine-tuning with Group Relative Policy Optimization using component-level verifiable rewards. This repository provides the benchmark construction pipeline, training configurations, inference code, and evaluation of verdicts, inconsistency types, visual evidence, and explanations.
@@ -45,7 +40,7 @@ The arXiv paper link, exact MIC-Bench download, and trained checkpoint links are
 - **Benchmark:** MIC-Bench pairs authentic and edited images while keeping their claims unchanged; see [Datasets](#datasets).
 - **Training:** adapt Qwen3-VL-4B-Instruct through SFT followed by GRPO.
 - **Evaluation:** report verdict, inconsistency type, visual evidence, and explanation metrics on ID and OOD splits.
-- **Workflow:** construct image–claim pairs, prepare training data, train MIC, and run inference and scoring; see [Experiments](#experiments).
+- **Reproduce the data:** use the provided source URLs, editing instructions, annotations, and splits; download the original images and regenerate their edited counterparts. See [Data preparation](#data-preparation).
 
 ## Datasets
 
@@ -55,33 +50,33 @@ MIC-Bench comprises **8,812 image–claim instances from 4,406 claims**. Each cl
 
 The benchmark covers nine inconsistency types: `clothing`, `flag`, `gesture`, `signage`, `architecture`, `infrastructure`, `technology`, `branding`, and `environment`.
 
-The construction pipeline starts from **TARA**, screens visible contextual cues, proposes an edit, and generates a counterpart using `gpt-image-1.5`. Generated pairs are reviewed before annotations and claim-level train, validation, in-distribution (ID), and out-of-distribution (OOD) splits are assembled.
+The source images come from **TARA**. The released text artifacts include source URLs, per-image editing instructions, edit types, annotations, available teacher rationales, and fixed claim-level splits. The main image generator is `gpt-image-1.5`; **FLUX.2-klein-9B** provides an alternative generator for the test sets.
 
 ### Data preparation
 
-#### Prepare benchmark files
+**You only need to recreate the images.** Source URLs and editing prompts are ready to run in `data/editing_prompts.json`; the four main files in `data/splits/` provide fixed membership and complete labels. There is no need to run screening, prompt generation, annotation generation, or split construction again.
 
-Training and evaluation expect split manifests and their referenced images under `data/`:
+From the repository root, in a Python 3.11 environment:
 
-```text
-data/
-├── TARA/
-│   ├── images/                 # Authentic images
-│   └── edited_images/         # AI-generated counterparts
-└── splits/
-    ├── train.json
-    ├── val.json
-    ├── test_id_edit.json
-    └── test_ood_edit.json
+```bash
+pip install -r requirements.txt
+export OPENAI_API_KEY="YOUR_API_KEY"
+python -m data_construction reproduce --backend gpt-image
 ```
 
-Each manifest is a JSON array containing paired original and edited records. Image paths are relative to the data root, and both instances of a claim stay in the same split. The split builder rejects source image paths shared across splits, and training preparation checks the same condition between training and validation. See [data/README.md](data/README.md) for the record schema, annotation requirements, and legacy label mappings.
+This command downloads the selected authentic images from their recorded URLs, applies each supplied editing prompt with `gpt-image-1.5`, and writes images and matching split manifests under `data/reproduced/gpt-image/`. It resumes completed work automatically. Image generation uses your OpenAI API account. To try five pairs first, add `--limit 5`; to inspect the workload without downloading images or calling a model, add `--dry-run`.
 
-The training and evaluation examples require reviewed split manifests and their images. See the construction workflow below, or use the exact MIC-Bench release once its download is available. For files stored elsewhere, pass `--data-root` and `--split-root` to the preparation, inference, and scoring commands.
+**Generated images may differ from those used in the paper**, even with the same model and prompt. Check that the regenerated edits still match the supplied annotations before training or evaluation. The output marks new generations as requiring review; historical reviews describe the original generated images.
 
-#### Construct image–claim pairs
+See the [image recreation guide](data_construction/README.md) for FLUX.2, source-image reuse, resuming, and output locations. The [data reference](data/README.md) documents the included files, split counts, and annotation schema. Source images, generated images, and the full upstream TARA `input/` directory are not included in Git.
 
-See the [dataset construction overview](data_construction/README.md) for the workflow from TARA images through generation and human review to dataset splits and training rationales. Re-running generation produces new images and does not guarantee the exact manuscript benchmark.
+After checking the regenerated images, point the training and evaluation commands below at their data root:
+
+```bash
+export MIC_DATA_ROOT="$PWD/data/reproduced/gpt-image"
+```
+
+Alternatively, pass `--data-root data/reproduced/gpt-image` to each command. Its matching `splits/` directory is selected automatically.
 
 ## Environment
 
@@ -95,7 +90,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Dependencies for data construction, inference, evaluation, and offline tests are listed together in [requirements.txt](requirements.txt). The vLLM dependency is installed on Linux; hosted inference and data utilities can also be used on other platforms.
+All project dependencies for GPT Image and FLUX.2 image recreation, inference, evaluation, and training support are listed in [requirements.txt](requirements.txt). The vLLM dependency is installed on Linux.
 
 For hosted model calls, set `OPENAI_API_KEY` in your shell or copy [.env.example](.env.example) to `.env` and fill in the key. Choose PyTorch and vLLM builds compatible with your accelerator environment.
 
@@ -126,6 +121,8 @@ With the images and `train.json` / `val.json` manifests in place, prepare the Sh
 ```bash
 python -m src.training.prepare --format sft
 ```
+
+The converter preserves usable teacher reasoning and rebuilds the final answer from the reference labels. See the [annotation schema](data/README.md#annotation-schema).
 
 In your SFT environment, train the LoRA adapter and merge it into the base model:
 
@@ -170,21 +167,21 @@ After installing the local inference dependencies, evaluate the exported MIC che
 python -m src.run_infer \
   --model outputs/exported/mic \
   --backend vllm \
-  --split test_id_edit \
+  --split test_id \
   --prompt canonical \
   --run-name mic_id
 ```
 
-For the SFT-only model, use `--model outputs/merged/qwen3vl4b`. For OOD evaluation, use `--split test_ood_edit` and a separate run name such as `mic_ood`. Hosted inference uses `--backend api --provider openai` with an API model name.
+For the SFT-only model, use `--model outputs/merged/qwen3vl4b`. For OOD evaluation, use `--split test_ood` and a separate run name such as `mic_ood`. Hosted inference uses `--backend api --provider openai` with an API model name.
 
-Inference resumes existing results by default and checks run, model, prompt, and inference settings before appending. Use a new `--run-name` when changing those settings. `--no-skip-existing` starts a fresh prediction file for the selected run. Malformed or mixed prediction files are rejected before scoring.
+Inference resumes existing results by default and checks run, model, prompt, inference settings, claims, generators, and image checksums before appending. Use a new `--run-name` when changing settings or input images, including when switching to FLUX.2. Older predictions without input checksums cannot be resumed; `--no-skip-existing` starts a fresh prediction file for the selected run. Malformed or mixed prediction files are rejected before scoring.
 
 #### Score predictions
 
 ```bash
 python -m src.run_score \
   --predictions results/predictions/mic_id.jsonl \
-  --split test_id_edit
+  --split test_id
 ```
 
 Scoring reports verdict metrics, inconsistency type accuracy, visual evidence similarity, and explanation similarity. Similarity scoring uses **Qwen3-Embedding-0.6B** by default. Use `--skip-embed` to compute only verdict and type metrics. For deliberately partial runs, pass `--allow-partial` to include coverage in the report.
@@ -193,7 +190,7 @@ Predictions are saved to `results/predictions/`. Per-instance scores and aggrega
 
 #### Expected results
 
-A completed inference run produces one structured prediction per selected instance. Evaluation produces per-instance scores and an aggregate report for verdict, inconsistency type, visual evidence, and explanation. Numeric reproduction results require the released checkpoint and exact reviewed MIC-Bench splits; those release links are pending.
+A completed inference run produces one structured prediction per selected instance. Evaluation produces per-instance scores and an aggregate report for verdict, inconsistency type, visual evidence, and explanation. Numeric reproduction results require the released checkpoint and the exact reviewed images used in the paper. The text manifests are included; checkpoint and original generated-image archive links are pending. Recreated images form a new rendering of the benchmark and may produce different scores.
 
 #### Parameter description
 
@@ -233,9 +230,10 @@ arxiv2026-mic/
 │   ├── parsers/        # Structured response parsing
 │   ├── metrics/        # Evaluation metrics
 │   ├── training/       # Training data conversion and component rewards
+│   ├── data.py         # Dataset loading, validation, and prediction I/O
 │   ├── run_infer.py    # Inference entry point
 │   ├── run_score.py    # Evaluation entry point
-│   └── ...             # Data loading, prompts, schema, and shared helpers
+│   └── ...             # Prompts, schema, and text embeddings
 ├── data_construction/  # Source preparation, editing, review, splits, and README
 ├── configs/
 │   ├── sft/            # SFT and adapter-merge configurations
@@ -245,10 +243,9 @@ arxiv2026-mic/
 ├── training/
 │   └── verl/           # Bundled GRPO framework
 ├── pic/                # README figures
-├── scripts/            # GRPO launch, checkpoint export, and release checks
-├── tests/              # Offline pipeline and regression tests
-├── .github/            # CI, issue templates, and pull request template
-└── requirements.txt    # Project dependencies, including offline tests
+├── scripts/            # GRPO launch and checkpoint export
+├── .github/            # Issue templates and pull request template
+└── requirements.txt    # Project dependencies
 ```
 
 ## Citation

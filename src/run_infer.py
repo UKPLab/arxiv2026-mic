@@ -7,9 +7,9 @@ Usage:
     python -m src.run_infer \\
         --model Qwen/Qwen3-VL-4B-Instruct \\
         --backend vllm \\
-        --split test_id_edit \\
+        --split test_id \\
         --prompt canonical \\
-        --run-name Qwen3-VL-4B__test_id_edit__canonical \\
+        --run-name Qwen3-VL-4B__test_id__canonical \\
         --limit 5
 """
 
@@ -21,10 +21,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.data_loader import load_split
+from src.data import input_provenance, load_split, read_predictions
 from src.prompts import build_prompt, PROMPT_VARIANTS
 from src.parsers.cot_tagged import parse
-from src.records import read_predictions
 from src.schema import Prediction
 
 
@@ -44,6 +43,10 @@ def _load_existing(out_path: Path, expected=None, samples=None, inference_config
             raise ValueError("Existing predictions have missing or different inference settings; use a new --run-name")
         if by_id is not None and row["sample_id"] not in by_id:
             raise ValueError("Existing predictions contain IDs outside the selected samples; use a new --run-name")
+        if by_id is not None and inference_config is not None:
+            if row.get("input_provenance") != input_provenance(by_id[row["sample_id"]]):
+                raise ValueError("Existing predictions have missing or different input images, claims, or generators; "
+                                 "use a new --run-name")
     return {row["sample_id"] for row in rows}
 
 
@@ -63,7 +66,7 @@ def main():
                    help="Required when --backend api")
     p.add_argument("--api-workers", type=int, default=8,
                    help="Concurrency for --backend api (ignored for vllm)")
-    p.add_argument("--split", required=True, help="test_id_edit / test_ood_edit / train / val")
+    p.add_argument("--split", required=True, help="test_id / test_ood / train / val")
     p.add_argument("--prompt", default="canonical", choices=list(PROMPT_VARIANTS))
     p.add_argument("--run-name", required=True, help="filename stem for predictions JSONL")
     p.add_argument("--generator", default=None,
@@ -175,6 +178,7 @@ def main():
 
     def _process_one(s):
         """Infer one sample, return Prediction dict ready to write."""
+        provenance = input_provenance(s)
         prompt = build_prompt(s.claim, variant=args.prompt)
         result = backend.run(s.image_path, prompt)
         verdict_score = None
@@ -200,6 +204,7 @@ def main():
             parse_errors=parsed["parse_errors"],
         ).to_dict()
         d["inference_config"] = inference_config
+        d["input_provenance"] = provenance
         if verdict_score is not None:
             d["verdict_score"] = verdict_score
         return d
@@ -211,45 +216,66 @@ def main():
         with open(out_path, "rb") as existing:
             existing.seek(-1, 2)
             needs_newline = existing.read(1) != b"\n"
-    with open(out_path, "a" if args.skip_existing else "w", encoding="utf-8") as f:
-        if needs_newline:
-            f.write("\n")
-        if args.backend == "api" and args.api_workers > 1:
-            from concurrent.futures import ThreadPoolExecutor, as_completed
-            written = 0
-            with ThreadPoolExecutor(max_workers=args.api_workers) as pool:
-                futs = {pool.submit(_process_one, s): s for s in remaining}
-                for fut in as_completed(futs):
+    try:
+        with open(out_path, "a" if args.skip_existing else "w", encoding="utf-8") as f:
+            if needs_newline:
+                f.write("\n")
+            if args.backend == "api" and args.api_workers > 1:
+                from concurrent.futures import ThreadPoolExecutor, as_completed
+                written = 0
+                collected, futs = set(), {}
+
+                def collect(fut):
+                    nonlocal failed, written
                     s = futs[fut]
                     try:
                         d = fut.result()
                     except Exception as e:
                         failed += 1
                         print(f"[err] {s.sample_id}: {type(e).__name__}: {e}")
+                    else:
+                        f.write(json.dumps(d, ensure_ascii=False) + "\n")
+                        f.flush()
+                        written += 1
+                        if written % 20 == 0 or written == len(remaining):
+                            rate = written / (time.time() - t0)
+                            print(f"  [{written}/{len(remaining)}]  {rate:.2f} samp/s  "
+                                  f"last={s.sample_id} verdict={d.get('pred_verdict')}")
+                    collected.add(fut)
+
+                try:
+                    with ThreadPoolExecutor(max_workers=args.api_workers) as pool:
+                        try:
+                            for sample in remaining:
+                                futs[pool.submit(_process_one, sample)] = sample
+                            for fut in as_completed(futs):
+                                collect(fut)
+                        except BaseException:
+                            for fut in futs:
+                                fut.cancel()
+                            raise
+                finally:
+                    # Shutdown waits for active requests; preserve their paid
+                    # responses even when the user interrupts the run.
+                    for fut in futs:
+                        if fut.done() and not fut.cancelled() and fut not in collected:
+                            collect(fut)
+            else:
+                for i, s in enumerate(remaining):
+                    try:
+                        d = _process_one(s)
+                    except Exception as e:
+                        failed += 1
+                        print(f"[err] {s.sample_id}: {type(e).__name__}: {e}")
                         continue
                     f.write(json.dumps(d, ensure_ascii=False) + "\n")
                     f.flush()
-                    written += 1
-                    if written % 20 == 0 or written == len(remaining):
-                        rate = written / (time.time() - t0)
-                        print(f"  [{written}/{len(remaining)}]  {rate:.2f} samp/s  "
+                    if (i + 1) % 10 == 0 or (i + 1) == len(remaining):
+                        rate = (i + 1) / (time.time() - t0)
+                        print(f"  [{i + 1}/{len(remaining)}]  {rate:.2f} samp/s  "
                               f"last={s.sample_id} verdict={d.get('pred_verdict')}")
-        else:
-            for i, s in enumerate(remaining):
-                try:
-                    d = _process_one(s)
-                except Exception as e:
-                    failed += 1
-                    print(f"[err] {s.sample_id}: {type(e).__name__}: {e}")
-                    continue
-                f.write(json.dumps(d, ensure_ascii=False) + "\n")
-                f.flush()
-                if (i + 1) % 10 == 0 or (i + 1) == len(remaining):
-                    rate = (i + 1) / (time.time() - t0)
-                    print(f"  [{i + 1}/{len(remaining)}]  {rate:.2f} samp/s  "
-                          f"last={s.sample_id} verdict={d.get('pred_verdict')}")
-
-    backend.unload()
+    finally:
+        backend.unload()
     print(f"[run_infer] done → {out_path}")
     if failed:
         raise SystemExit(f"{failed} samples failed; rerun the same command to resume")

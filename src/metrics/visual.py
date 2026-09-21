@@ -17,7 +17,7 @@ filters to is_edited=True, which naturally drops all tn_abstain samples.
 """
 
 
-from ..cases import classify as classify_case
+from . import classify as classify_case
 
 
 def score_trivial(case: str) -> dict | None:

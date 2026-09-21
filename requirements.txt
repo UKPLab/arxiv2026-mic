@@ -1,12 +1,12 @@
-# Shared data utilities
-numpy>=1.26,<2
+# Image recreation and hosted inference
 pillow>=10.0
 python-dotenv>=1.0
-pyarrow>=19.0
-
-# Hosted inference and image construction
 openai>=1.0
 requests>=2.31
+
+# Shared data utilities
+numpy>=1.26,<2
+pyarrow>=19.0
 
 # Local inference, embedding metrics, and training support
 torch>=2.4
@@ -16,7 +16,11 @@ vllm>=0.11,<=0.12.0; platform_system == "Linux"
 qwen-vl-utils>=0.0.14
 tensorboard
 
-# Configuration and offline tests
+# Local FLUX.2 image editing (CUDA GPU)
+diffusers>=0.37.0,<0.38
+accelerate>=1.2
+safetensors>=0.4
+
+# Configuration
 hydra-core>=1.3
 pyyaml>=6
-pytest>=8

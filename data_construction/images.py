@@ -16,7 +16,7 @@ from urllib.parse import urlsplit, urlunsplit
 from PIL import Image
 
 from data_construction.common import (
-    IMAGE_DIR, TARA_DIR, add_batch_arguments, chat_json, metadata,
+    CONSTRUCTION_DIR, EDITED_IMAGE_DIR, EDITING_PROMPTS_PATH, IMAGE_DIR, add_batch_arguments, chat_json, metadata,
     nonnegative_int, positive_int, read_json, run_api_batch, write_bytes, write_json,
 )
 from data_construction.prompts import (
@@ -97,7 +97,7 @@ def prepare_main(argv=None):
     p = argparse.ArgumentParser(description='Convert downloaded TARA JSON/JSONL metadata into image-download records.')
     p.add_argument("--input", nargs="+", type=Path, required=True)
     p.add_argument("--claim-field", default="caption")
-    p.add_argument("--output", type=Path, default=TARA_DIR / "filtered_metadata.json")
+    p.add_argument("--output", type=Path, default=CONSTRUCTION_DIR / "source_records.json")
     args = p.parse_args(argv)
     records = prepare(args.input, args.claim_field)
     write_json(args.output, records)
@@ -162,9 +162,9 @@ def format_stats(stats):
 
 def download_main(argv=None):
     parser = argparse.ArgumentParser(description='Download TARA images, preferring jumbo resolution and reusing cached files.')
-    parser.add_argument("--metadata", type=Path, default=TARA_DIR / "filtered_metadata.json")
+    parser.add_argument("--metadata", type=Path, default=CONSTRUCTION_DIR / "source_records.json")
     parser.add_argument("--image-dir", "--image_dir", type=Path, default=IMAGE_DIR)
-    parser.add_argument("--output", type=Path, default=TARA_DIR / "filtered_metadata_with_images.json")
+    parser.add_argument("--output", type=Path, default=CONSTRUCTION_DIR / "source_metadata.json")
     parser.add_argument("--max-workers", "--max_workers", type=positive_int, default=8)
     parser.add_argument("--limit", type=nonnegative_int)
     args = parser.parse_args(argv)
@@ -230,9 +230,9 @@ def filter_main(argv=None):
     parser.add_argument("--model", default="gpt-4o-mini")
     parser.add_argument("--min-width", "--min_width", type=nonnegative_int, default=1024)
     parser.add_argument("--min-height", "--min_height", type=nonnegative_int, default=1024)
-    parser.add_argument("--metadata", type=Path, default=TARA_DIR / "filtered_metadata_with_images.json")
+    parser.add_argument("--metadata", type=Path, default=CONSTRUCTION_DIR / "source_metadata.json")
     parser.add_argument("--image-dir", "--image_dir", type=Path, default=IMAGE_DIR)
-    parser.add_argument("--output", type=Path, default=TARA_DIR / "filter_results.json")
+    parser.add_argument("--output", type=Path, default=CONSTRUCTION_DIR / "image_screening.json")
     args = parser.parse_args(argv)
     records = [row for row in read_json(args.metadata) if row.get("local_image")]
 
@@ -264,9 +264,9 @@ def verify_main(argv=None):
     parser = argparse.ArgumentParser(description='Verify clearly visible edit targets in pairs that passed the first screen.')
     add_batch_arguments(parser, workers=16)
     parser.add_argument("--model", default="gpt-5.5", help="Vision model used for strict verification (paper: gpt-5.5)")
-    parser.add_argument("--round1-path", "--round1_path", type=Path, default=TARA_DIR / "filter_results.json")
+    parser.add_argument("--round1-path", "--round1_path", type=Path, default=CONSTRUCTION_DIR / "image_screening.json")
     parser.add_argument("--image-dir", "--image_dir", type=Path, default=IMAGE_DIR)
-    parser.add_argument("--output", "--output-path", "--output_path", type=Path, default=TARA_DIR / "filter_round2_results.json")
+    parser.add_argument("--output", "--output-path", "--output_path", type=Path, default=CONSTRUCTION_DIR / "cue_verification.json")
     args = parser.parse_args(argv)
     items = [row for row in read_json(args.round1_path)
              if row.get("filter_result", {}).get("suitable") is True and "error" not in row["filter_result"]]
@@ -329,8 +329,8 @@ def propose_main(argv=None):
     parser = argparse.ArgumentParser(description='Assign balanced edit types and propose one contextual edit per verified image.')
     add_batch_arguments(parser, workers=16)
     parser.add_argument("--model", default="gpt-5.5", help="Text model used to propose edits (paper: gpt-5.5)")
-    parser.add_argument("--output", type=Path, default=TARA_DIR / "edit_prompts.json")
-    parser.add_argument("--round2-path", "--round2_path", type=Path, default=TARA_DIR / "filter_round2_results.json")
+    parser.add_argument("--output", type=Path, default=EDITING_PROMPTS_PATH)
+    parser.add_argument("--round2-path", "--round2_path", type=Path, default=CONSTRUCTION_DIR / "cue_verification.json")
     parser.add_argument("--quality", choices=["high", "high+medium", "all"], default="high")
     args = parser.parse_args(argv)
     data = [row for row in read_json(args.round2_path)
@@ -393,9 +393,9 @@ def edit_main(argv=None):
     add_batch_arguments(parser, workers=10)
     parser.add_argument("--model", default="gpt-image-1.5")
     parser.add_argument("--quality", default="medium")
-    parser.add_argument("--prompts", type=Path, default=TARA_DIR / "edit_prompts.json")
-    parser.add_argument("--output-dir", "--output_dir", type=Path, default=TARA_DIR / "edited_images")
-    parser.add_argument("--results", type=Path, default=TARA_DIR / "edit_results.json")
+    parser.add_argument("--prompts", type=Path, default=EDITING_PROMPTS_PATH)
+    parser.add_argument("--output-dir", "--output_dir", type=Path, default=EDITED_IMAGE_DIR)
+    parser.add_argument("--results", type=Path, default=CONSTRUCTION_DIR / "generation_metadata.json")
     parser.add_argument("--image-dir", "--image_dir", type=Path, default=IMAGE_DIR)
     args = parser.parse_args(argv)
 

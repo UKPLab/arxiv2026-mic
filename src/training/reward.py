@@ -61,7 +61,7 @@ def _normalize_type(value: str | None) -> str | None:
     if cleaned is None:
         return None
 
-    from src.records import normalize_type
+    from src.data import normalize_type
     from src.schema import INCONSISTENCY_TYPES
     normalized = normalize_type(cleaned)
     return normalized if normalized in INCONSISTENCY_TYPES else None

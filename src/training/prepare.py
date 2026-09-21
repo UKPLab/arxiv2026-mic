@@ -10,16 +10,21 @@ import json
 import re
 from pathlib import Path
 
-from src.data_loader import DATA_ROOT
+from src.data import DATA_ROOT, image_path, read_records, sample_id, validate_pairs
 from src.parsers.cot_tagged import parse
 from src.prompts import build_prompt
-from src.records import image_path, read_records, sample_id, validate_pairs
 
 
 def build_target(row):
-    match = re.search(r"<think>(.*?)</think>", row.get("cot_response") or "", re.S | re.I)
+    teacher = row.get("cot_response") or ""
+    match = re.search(r"<think>(.*?)</think>", teacher, re.S | re.I)
     edited = row["image_type"] == "edited"
-    if match and match.group(1).strip():
+    verdict = "INCONSISTENT" if edited else "CONSISTENT"
+    teacher_final = teacher[match.end():] if match else teacher
+    teacher_verdicts = re.findall(r"<verdict>\s*(CONSISTENT|INCONSISTENT)\s*</verdict>",
+                                 teacher_final, re.I)
+    agrees_with_label = all(value.upper() == verdict for value in teacher_verdicts)
+    if match and match.group(1).strip() and agrees_with_label:
         think = match.group(1).strip()
     elif edited:
         think = f"The visible cue is {row['gt_entity_fine']}. {row['gt_why_contradicts']}"
@@ -27,7 +32,7 @@ def build_target(row):
         think = "No specific visible element contradicts the accompanying claim."
     fields = {
         "think": think,
-        "verdict": "INCONSISTENT" if edited else "CONSISTENT",
+        "verdict": verdict,
         "type": row["edit_type"] if edited else "None",
         "visual": row["gt_entity_fine"] if edited else "None",
         "explanation": row["gt_why_contradicts"] if edited else "None",

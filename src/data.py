@@ -1,9 +1,15 @@
-"""Validate benchmark records and normalize legacy construction labels."""
+"""Read, validate, and load MIC datasets and model predictions."""
 
+import hashlib
 import json
+import os
 from pathlib import Path
 
-from .schema import INCONSISTENCY_TYPES
+from . import REPO_ROOT
+from .schema import EvalSample, INCONSISTENCY_TYPES
+
+DATA_ROOT = Path(os.environ.get("MIC_DATA_ROOT", REPO_ROOT / "data"))
+SPLITS_ROOT = DATA_ROOT / "splits"
 
 LEGACY_TYPES = {
     "social_behavior": "gesture",
@@ -30,6 +36,13 @@ def image_path(data_root, local_image):
     if not path.is_relative_to(root):
         raise ValueError(f"Image path must be inside the data root: {local_image}")
     return path
+
+
+def input_provenance(sample):
+    """Identify the actual inference input, independent of its filesystem location."""
+    with Path(sample.image_path).open("rb") as image:
+        checksum = hashlib.file_digest(image, "sha256").hexdigest()
+    return {"claim": sample.claim, "generator": sample.generator, "image_sha256": checksum}
 
 
 def normalize_record(item):
@@ -72,6 +85,24 @@ def read_records(path, data_root=None, check_images=False):
     return rows
 
 
+def load_split(split_name: str, data_root=None, split_root=None) -> list[EvalSample]:
+    root = Path(data_root) if data_root is not None else DATA_ROOT
+    splits = Path(split_root) if split_root is not None else root / "splits"
+    rows = read_records(splits / f"{split_name}.json", root)
+    samples = []
+    for item in rows:
+        edited = item["image_type"] == "edited"
+        samples.append(EvalSample(
+            sample_id=sample_id(item), article_id=item["_id"], split=split_name,
+            image_path=str(image_path(root, item["local_image"])), claim=item["claim"],
+            is_edited=edited, generator=item.get("generator", "unknown" if edited else "none"),
+            year=item.get("year"), gt_edit_type=item["edit_type"] if edited else None,
+            gt_entity_fine=item.get("gt_entity_fine"),
+            gt_why_contradicts=item.get("gt_why_contradicts"),
+        ))
+    return samples
+
+
 def validate_pairs(rows):
     pairs = {}
     for row in rows:
@@ -112,6 +143,14 @@ def read_predictions(path):
             for key in ("pred_verdict", "pred_type", "pred_visual", "pred_explanation"):
                 if key not in row or (row[key] is not None and not isinstance(row[key], str)):
                     raise ValueError(f"{location}: {key} must be a string or null")
+            provenance = row.get("input_provenance")
+            if provenance is not None:
+                if (not isinstance(provenance, dict)
+                        or any(not isinstance(provenance.get(key), str) or not provenance[key].strip()
+                               for key in ("claim", "generator", "image_sha256"))
+                        or len(provenance["image_sha256"]) != 64
+                        or any(char not in "0123456789abcdef" for char in provenance["image_sha256"])):
+                    raise ValueError(f"{location}: invalid input provenance")
             if row["sample_id"] in seen:
                 raise ValueError(f"{location}: predictions must have unique sample IDs: {row['sample_id']}")
             if rows and any(row[key] != rows[0][key] for key in ("run_id", "model", "split", "prompt_variant")):

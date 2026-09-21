@@ -12,7 +12,7 @@ Metrics:
 Usage:
     python -m src.run_score \\
         --predictions results/predictions/<run>.jsonl \\
-        --split test_id_edit
+        --split test_id
     # verdict + type only, no embedding model:
     python -m src.run_score --predictions ... --split ... --skip-embed
 """
@@ -25,10 +25,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.cases import classify as classify_case
-from src.data_loader import load_split
+from src.data import input_provenance, load_split, read_predictions
+from src.metrics import classify as classify_case
 from src.parsers.cot_tagged import parse
-from src.records import read_predictions
 from src.schema import ScoredSample
 from src.metrics import verdict as m_verdict
 from src.metrics import type_acc as m_type
@@ -89,6 +88,15 @@ def score_run(
     for pred in preds:
         if pred.get("split") != split_name:
             raise ValueError(f"Prediction split does not match {split_name}")
+        sample = samples[pred["sample_id"]]
+        provenance = pred.get("input_provenance")
+        if provenance is not None:
+            if provenance["claim"] != sample.claim or provenance["generator"] != sample.generator:
+                raise ValueError(f"{sample.sample_id}: prediction input does not match the selected split")
+            # Scoring still works with text metadata alone. When images are
+            # present, also reject predictions from a different rendering.
+            if Path(sample.image_path).is_file() and provenance != input_provenance(sample):
+                raise ValueError(f"{sample.sample_id}: prediction image differs from the selected image")
 
     per_sample: list[dict] = []
     pack: list[tuple[dict, object, dict]] = []  # (per_sample_metric, split_sample, pred)
