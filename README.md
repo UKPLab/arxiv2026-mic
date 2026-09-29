@@ -3,7 +3,7 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python Versions](https://img.shields.io/badge/Python-3.11-blue.svg?style=flat&logo=python&logoColor=white)](https://www.python.org/)
 
-This repository contains the code for **MIC (Multimodal Inconsistency Checking)** and the **MIC-Bench** construction pipeline associated with *MIC: Explaining Image–Claim Inconsistencies in AI-Generated Multimodal Misinformation*. The paper's arXiv submission is pending.
+This repository contains the code for **MIC (Multimodal Inconsistency Checking)** and the **MIC-Bench** construction pipeline associated with *MIC: Explaining Image–Claim Inconsistencies in AI-Generated Multimodal Misinformation*. The paper is available on [arXiv](https://arxiv.org/abs/2609.33441).
 
 The original code is released under the **Apache License 2.0**. Bundled frameworks retain their upstream licenses. Images, datasets, and model weights are subject to their respective providers' terms; see [License](#license).
 
@@ -255,10 +255,10 @@ arxiv2026-mic/
 @misc{zeng-etal-mic,
   title = {{MIC}: Explaining Image--Claim Inconsistencies in {AI}-Generated Multimodal Misinformation},
   author = {Zeng, Ruihong and Tonglet, Jonathan and Nakov, Preslav and Gurevych, Iryna},
-  year = {},
-  eprint = {},
+  year = {2026},
+  eprint = {2609.33441},
   archivePrefix = {arXiv},
-  url = {}
+  url = {https://arxiv.org/abs/2609.33441}
 }
 ```
 
